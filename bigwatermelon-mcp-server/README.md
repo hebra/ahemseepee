@@ -20,7 +20,7 @@ export GEMINI_API_KEY=ABCDE-XXXX-YYY-ETC
 curl -X POST http://localhost:8080/mcp \
 -H "Content-Type: application/json" \
 -d '{
-    "action": "ping",
+    "action": "get-big-watermelon-deals",
     "parameters": {},
     "request_id": "123"
 }'

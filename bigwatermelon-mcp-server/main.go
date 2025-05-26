@@ -10,19 +10,6 @@ import (
 
 var log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-type MCPRequest struct {
-	Action     string          `json:"action"`
-	Parameters json.RawMessage `json:"parameters"`
-	RequestID  string          `json:"request_id"`
-}
-
-type MCPResponse struct {
-	Status    string      `json:"status"`
-	Data      interface{} `json:"data,omitempty"`
-	Error     string      `json:"error,omitempty"`
-	RequestID string      `json:"request_id"`
-}
-
 type MCPServer struct {
 	handlers map[string]func(params json.RawMessage) (interface{}, error)
 }
@@ -43,7 +30,7 @@ func (s *MCPServer) HandleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req MCPRequest
+	var req internal.MCPRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
@@ -51,7 +38,7 @@ func (s *MCPServer) HandleRequest(w http.ResponseWriter, r *http.Request) {
 
 	handler, exists := s.handlers[req.Action]
 	if !exists {
-		sendResponse(w, MCPResponse{
+		sendResponse(w, internal.MCPResponse{
 			Status:    "error",
 			Error:     "Unknown action",
 			RequestID: req.RequestID,
@@ -61,7 +48,7 @@ func (s *MCPServer) HandleRequest(w http.ResponseWriter, r *http.Request) {
 
 	result, err := handler(req.Parameters)
 	if err != nil {
-		sendResponse(w, MCPResponse{
+		sendResponse(w, internal.MCPResponse{
 			Status:    "error",
 			Error:     err.Error(),
 			RequestID: req.RequestID,
@@ -69,14 +56,14 @@ func (s *MCPServer) HandleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sendResponse(w, MCPResponse{
+	sendResponse(w, internal.MCPResponse{
 		Status:    "success",
 		Data:      result,
 		RequestID: req.RequestID,
 	})
 }
 
-func sendResponse(w http.ResponseWriter, resp MCPResponse) {
+func sendResponse(w http.ResponseWriter, resp internal.MCPResponse) {
 	w.Header().Set("Content-Type", "application/json")
 	err := json.NewEncoder(w).Encode(resp)
 	if err != nil {
@@ -86,14 +73,12 @@ func sendResponse(w http.ResponseWriter, resp MCPResponse) {
 }
 
 func main() {
-
 	log.Info("Starting offers extractor...")
-	internal.UpdateOffers()
 
 	server := NewMCPServer()
 
-	server.RegisterHandler("ping", func(params json.RawMessage) (interface{}, error) {
-		return map[string]string{"message": "pong"}, nil
+	server.RegisterHandler("get-big-watermelon-deals", func(params json.RawMessage) (interface{}, error) {
+		return map[string]internal.ResponseData{"message": internal.FetchOffers()}, nil
 	})
 
 	http.HandleFunc("/mcp", server.HandleRequest)

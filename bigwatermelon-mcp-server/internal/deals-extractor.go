@@ -16,29 +16,77 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 )
 
 const gcpFilePrefix = "au-bigwatermelon-image-"
 
 const offersJsonfilename = "offers.json"
 
+const dateFormat = "2006-01-02"
+
 var log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-func UpdateOffers() {
+func FetchOffers() ResponseData {
 	ctx := context.Background()
 
+	localResp := checkLocalFile()
+	if localResp.LastUpdated == time.Now().Format(dateFormat) {
+		log.Info("Local file is up to date.")
+		return localResp
+	}
+
 	var client = getClient(ctx)
-	defer client.Close()
+	defer func(client *genai.Client) {
+		err := client.Close()
+		if err != nil {
+			log.Error("Error closing client", "Error", err)
+		}
+	}(client)
 
 	cleanUpGcpFiles(ctx, client)
 
 	images := downloadImagesFromBigWatermelon()
 	gcpFiles := uploadImagesToGoogleCloud(ctx, client, images)
-	offers := makeRequestToGemini(ctx, client, gcpFiles)
 
-	writeOffersToFile(offers)
+	resp := ResponseData{
+		LastUpdated: time.Now().Format(dateFormat),
+		Business:    "Big Watermelon Bushy Park",
+		Location: Location{
+			Latitude:  -37.8748714,
+			Longitude: 145.2053244,
+			Address:   "1161 High St Rd",
+			City:      "Wantirna South",
+			State:     "VIC",
+			Zip:       "3152",
+		},
+		Offers: makeRequestToGemini(ctx, client, gcpFiles),
+	}
 
-	_ = len(offers)
+	writeOffersToFile(resp)
+
+	return resp
+}
+
+func checkLocalFile() ResponseData {
+	if _, err := os.Stat(offersJsonfilename); errors.Is(err, os.ErrNotExist) {
+		log.Info("No local file found.")
+		return ResponseData{}
+	}
+
+	content, err := os.ReadFile(offersJsonfilename)
+	if err != nil {
+		log.Error("Error reading local file.", "Error", err)
+		return ResponseData{}
+	}
+
+	var resp ResponseData
+	if err := json.Unmarshal(content, &resp); err != nil {
+		log.Error("Error unmarshalling JSON.", "Error", err)
+		return ResponseData{}
+	}
+
+	return resp
 }
 
 func getClient(ctx context.Context) *genai.Client {
@@ -84,7 +132,12 @@ func downloadImagesFromBigWatermelon() [][]byte {
 		log.Error("Error fetching the URL.", "Error", err)
 		return imageList
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			log.Error("Error closing response body.", "Error", err)
+		}
+	}(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		log.Error("Failed to fetch URL", "URL", url, "status code", resp.StatusCode)
@@ -125,7 +178,12 @@ func downloadImagesFromBigWatermelon() [][]byte {
 					return
 				}
 
-				defer image.Body.Close()
+				defer func(Body io.ReadCloser) {
+					err := Body.Close()
+					if err != nil {
+						log.Error("Error closing response body.", "Error", err)
+					}
+				}(image.Body)
 
 				if image.StatusCode != http.StatusOK {
 					log.Error("Failed to fetch specials image.", "URL", match[1], "status code", resp.StatusCode)
@@ -195,9 +253,9 @@ func uploadImagesToGoogleCloud(ctx context.Context, client *genai.Client, images
 	return files
 }
 
-func makeRequestToGemini(ctx context.Context, client *genai.Client, files []*genai.File) [][]Offer {
+func makeRequestToGemini(ctx context.Context, client *genai.Client, files []*genai.File) []Offer {
 
-	var offers [][]Offer
+	var offers []Offer
 
 	var wg sync.WaitGroup
 	wg.Add(len(files))
@@ -238,7 +296,7 @@ Return: Array<Offer>
 			}
 
 			log.Info("Data extraction successful for image.", "Name", file.Name)
-			offers = append(offers, parseResponseJson(resp))
+			offers = append(offers, parseResponseJson(resp)...)
 			wg.Done()
 		}()
 	}
@@ -273,8 +331,8 @@ func parseResponseJson(resp *genai.GenerateContentResponse) []Offer {
 	return []Offer{}
 }
 
-func writeOffersToFile(offers [][]Offer) {
-	jsonData, err := json.MarshalIndent(offers, "", "\t")
+func writeOffersToFile(resp ResponseData) {
+	jsonData, err := json.MarshalIndent(resp, "", "\t")
 	if err != nil {
 		log.Error("Error transforming into JSON.", "Error", err)
 	}
