@@ -36,6 +36,24 @@ func FetchOffers() ResponseData {
 		return localResp
 	}
 
+	location := Location{
+		Latitude:  -37.8748714,
+		Longitude: 145.2053244,
+		Address:   "1161 High St Rd",
+		City:      "Wantirna South",
+		State:     "VIC",
+		Zip:       "3152",
+	}
+
+	// Wait until 7 AM before fetching deals of the day
+	if time.Now().Hour() < 7 {
+		return ResponseData{
+			LastUpdated: time.Now().Format(dateFormat),
+			Business:    "Big Watermelon Bushy Park",
+			Location:    location,
+		}
+	}
+
 	var client = getClient(ctx)
 	defer func(client *genai.Client) {
 		err := client.Close()
@@ -52,15 +70,8 @@ func FetchOffers() ResponseData {
 	resp := ResponseData{
 		LastUpdated: time.Now().Format(dateFormat),
 		Business:    "Big Watermelon Bushy Park",
-		Location: Location{
-			Latitude:  -37.8748714,
-			Longitude: 145.2053244,
-			Address:   "1161 High St Rd",
-			City:      "Wantirna South",
-			State:     "VIC",
-			Zip:       "3152",
-		},
-		Offers: makeRequestToGemini(ctx, client, gcpFiles),
+		Location:    location,
+		Offers:      makeRequestToGemini(ctx, client, gcpFiles),
 	}
 
 	writeOffersToFile(resp)
