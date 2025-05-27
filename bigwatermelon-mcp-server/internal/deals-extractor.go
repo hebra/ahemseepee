@@ -166,12 +166,17 @@ func downloadImagesFromBigWatermelon() [][]byte {
 
 	// Example Special URL from BigWatermelon
 	// https://www.bigwatermelon.com.au/wp-content/uploads/2025/04/1-2.FRI-SPECIALS-11-4-25.jpg
+	// https://www.bigwatermelon.com.au/wp-content/uploads/2025/05/1-2.SPECIAL-TUE-27-5-25.jpg
 
-	regex := regexp.MustCompile(`(?i)href="([^"]*-SPECIALS-[^"]*)"`)
+	regex := regexp.MustCompile(`(?i)href="([^"]*SPECIALS?[^"]*\.jpg)"`)
 
 	matches := regex.FindAllStringSubmatch(htmlContent, -1)
 
 	log.Info("Extracted SPECIALS image URLs.")
+
+	for _, match := range matches {
+		log.Info("Extracted SPECIALS image URL.", "URL", match[1])
+	}
 
 	if matches != nil {
 		var wg sync.WaitGroup

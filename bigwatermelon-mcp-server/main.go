@@ -1,89 +1,90 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"github.com/ThinkInAIXYZ/go-mcp/protocol"
+	"github.com/ThinkInAIXYZ/go-mcp/server"
+	"github.com/ThinkInAIXYZ/go-mcp/transport"
+	"github.com/gin-gonic/gin"
 	"github.com/hebra/ahemseepee/bigwatermelon-mcp-server/internal"
 	"log/slog"
-	"net/http"
 	"os"
 )
 
 var log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-type MCPServer struct {
-	handlers map[string]func(params json.RawMessage) (interface{}, error)
-}
-
-func NewMCPServer() *MCPServer {
-	return &MCPServer{
-		handlers: make(map[string]func(params json.RawMessage) (interface{}, error)),
-	}
-}
-
-func (s *MCPServer) RegisterHandler(action string, handler func(params json.RawMessage) (interface{}, error)) {
-	s.handlers[action] = handler
-}
-
-func (s *MCPServer) HandleRequest(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req internal.MCPRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	handler, exists := s.handlers[req.Action]
-	if !exists {
-		sendResponse(w, internal.MCPResponse{
-			Status:    "error",
-			Error:     "Unknown action",
-			RequestID: req.RequestID,
-		})
-		return
-	}
-
-	result, err := handler(req.Parameters)
-	if err != nil {
-		sendResponse(w, internal.MCPResponse{
-			Status:    "error",
-			Error:     err.Error(),
-			RequestID: req.RequestID,
-		})
-		return
-	}
-
-	sendResponse(w, internal.MCPResponse{
-		Status:    "success",
-		Data:      result,
-		RequestID: req.RequestID,
-	})
-}
-
-func sendResponse(w http.ResponseWriter, resp internal.MCPResponse) {
-	w.Header().Set("Content-Type", "application/json")
-	err := json.NewEncoder(w).Encode(resp)
-	if err != nil {
-		log.Error("Error sending response: ", "Error", err)
-		return
-	}
+type DealsRequest struct {
 }
 
 func main() {
 	log.Info("Starting offers extractor...")
 
-	server := NewMCPServer()
+	messageEndpointURL := "/message"
 
-	server.RegisterHandler("get-big-watermelon-deals", func(params json.RawMessage) (interface{}, error) {
-		return map[string]internal.ResponseData{"message": internal.FetchOffers()}, nil
+	sseTransport, mcpHandler, err := transport.NewSSEServerTransportAndHandler(messageEndpointURL)
+	if err != nil {
+		log.Error("Error creating SEE transport and handler.", "Error", err)
+		os.Exit(1)
+	}
+
+	mcpServer, _ := server.NewServer(sseTransport)
+
+	tool, err := protocol.NewTool("get-big-watermelon-deals",
+		"Get today's deals from Big Watermelon",
+		DealsRequest{})
+
+	if err != nil {
+		log.Error("Failed to create tool.", "Error", err)
+		os.Exit(1)
+	}
+	mcpServer.RegisterTool(tool, getDailyDealsHandler)
+
+	go func() {
+		err := mcpServer.Run()
+		if err != nil {
+			log.Error("Failed to start MCP server.", "Error", err)
+			os.Exit(1)
+		}
+	}()
+
+	defer func(mcpServer *server.Server, userCtx context.Context) {
+		err := mcpServer.Shutdown(userCtx)
+		if err != nil {
+			log.Error("Failed to shutdown MCP server.", "Error", err)
+			os.Exit(1)
+		}
+	}(mcpServer, context.Background())
+
+	r := gin.Default()
+	r.GET("/sse", func(ctx *gin.Context) {
+		mcpHandler.HandleSSE().ServeHTTP(ctx.Writer, ctx.Request)
+	})
+	r.POST(messageEndpointURL, func(ctx *gin.Context) {
+		mcpHandler.HandleMessage().ServeHTTP(ctx.Writer, ctx.Request)
 	})
 
-	http.HandleFunc("/mcp", server.HandleRequest)
-	log.Info("Starting MCP server on :8080...")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
-		log.Error("Error starting MCP server: ", "Error", err)
+	if err = r.Run(":8080"); err != nil {
+		log.Error("Failed to start HTTP server.", "Error", err)
+		os.Exit(1)
 	}
+}
+
+func getDailyDealsHandler(ctx context.Context, req *protocol.CallToolRequest) (*protocol.CallToolResult, error) {
+
+	bytes, err := json.Marshal(internal.FetchOffers())
+	if err != nil {
+		log.Error("Error marshalling JSON.", "Error", err)
+		return nil, err
+	}
+
+	return &protocol.CallToolResult{
+		Content: []protocol.Content{
+			&protocol.TextContent{
+				Type: "text",
+				Text: string(bytes),
+			},
+		},
+	}, nil
+
 }
