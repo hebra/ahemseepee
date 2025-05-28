@@ -7,7 +7,7 @@ import (
 	"github.com/ThinkInAIXYZ/go-mcp/server"
 	"github.com/ThinkInAIXYZ/go-mcp/transport"
 	"github.com/gin-gonic/gin"
-	"github.com/hebra/ahemseepee/bigwatermelon-mcp-server/internal"
+	"github.com/hebra/ahemseepee/daily-deals-mcp-server/internal"
 	"log/slog"
 	"os"
 )
@@ -72,7 +72,7 @@ func main() {
 
 func getDailyDealsHandler(ctx context.Context, req *protocol.CallToolRequest) (*protocol.CallToolResult, error) {
 
-	bytes, err := json.Marshal(internal.FetchOffers())
+	bytes, err := json.Marshal(internal.FetchBigWatermelonDailyDeals())
 	if err != nil {
 		log.Error("Error marshalling JSON.", "Error", err)
 		return nil, err

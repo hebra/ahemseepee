@@ -1,4 +1,4 @@
-module github.com/hebra/ahemseepee/bigwatermelon-mcp-server
+module github.com/hebra/ahemseepee/daily-deals-mcp-server
 
 go 1.24.3
 

@@ -21,13 +21,13 @@ import (
 
 const gcpFilePrefix = "au-bigwatermelon-image-"
 
-const offersJsonfilename = "offers.json"
+const offersJsonfilename = "bigwatermelon-dailydeals.json"
 
 const dateFormat = "2006-01-02"
 
 var log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-func FetchOffers() ResponseData {
+func FetchBigWatermelonDailyDeals() ResponseData {
 	ctx := context.Background()
 
 	localResp := checkLocalFile()
@@ -42,6 +42,7 @@ func FetchOffers() ResponseData {
 		Address:   "1161 High St Rd",
 		City:      "Wantirna South",
 		State:     "VIC",
+		Country:   "Australia",
 		Zip:       "3152",
 	}
 
